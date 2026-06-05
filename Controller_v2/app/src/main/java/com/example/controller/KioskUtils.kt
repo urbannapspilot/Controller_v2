@@ -40,8 +40,19 @@ object KioskUtils {
 
         if (dpm.isDeviceOwnerApp(packageName)) {
             try {
+                // 1. Whitelist the app for Lock Task
                 dpm.setLockTaskPackages(adminComponent, arrayOf(packageName))
-                Log.i(TAG, "Set as Device Owner — entering Lock Task Mode")
+                
+                // 2. Harden the Kiosk: Disable Status Bar, Keyguard, and Notifications
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    dpm.setLockTaskFeatures(adminComponent, 
+                        DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
+                }
+                
+                // 3. Prevent the user from seeing the Power Button menu or Status bar
+                dpm.setStatusBarDisabled(adminComponent, true)
+                
+                Log.i(TAG, "Device Owner Hardening Applied")
             } catch (e: Exception) {
                 Log.w(TAG, "setLockTaskPackages failed: ${e.message}")
             }

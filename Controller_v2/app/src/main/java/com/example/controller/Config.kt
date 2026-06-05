@@ -42,4 +42,9 @@ object Config {
 
     // JS Bridge strings
     const val JS_BRIDGE_NAME = "ESP32"
+
+    // Screen Dimming (Software Sleep)
+    const val INACTIVITY_DIM_MS = 60000L    // 1 minute of no touch = dim
+    const val BRIGHTNESS_DIM = 0.01f        // Almost black
+    const val BRIGHTNESS_FULL = -1.0f       // Restore system brightness
 }

@@ -25,7 +25,7 @@ class UsbSerialManager(
     private var serialPort: UsbSerialPort? = null
     private var ioManager: SerialInputOutputManager? = null
     
-    private val rxQueue = ConcurrentLinkedQueue<String>()
+    private val rxQueue = ConcurrentLinkedQueue<ByteArray>()
     private val rxCount = AtomicInteger(0)
     private val txQueue = LinkedBlockingQueue<ByteArray>(2048)
 
@@ -125,17 +125,17 @@ class UsbSerialManager(
     }
 
     fun receiveData(): String {
-        val sb = StringBuilder()
+        val bos = java.io.ByteArrayOutputStream()
         while (true) {
             val chunk = rxQueue.poll() ?: break
             rxCount.decrementAndGet()
-            sb.append(chunk)
+            bos.write(chunk)
         }
-        return sb.toString()
+        return bos.toString("UTF-8")
     }
     
     fun onNewData(data: ByteArray) {
-        rxQueue.add(String(data, Charsets.UTF_8))
+        rxQueue.add(data)
         if (rxCount.incrementAndGet() > Config.RX_MAX_CHUNKS) {
             if (rxQueue.poll() != null) rxCount.decrementAndGet()
         }

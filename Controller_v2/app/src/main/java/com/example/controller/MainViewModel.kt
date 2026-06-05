@@ -84,14 +84,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application), S
                 null
             }
 
-            withContext(Dispatchers.Main) {
-                if (html != null) {
-                    Log.i(Config.VM_TAG, "Fetch OK (${html.length} chars) — caching and loading")
-                    writeCache(html)
+            if (html != null) {
+                Log.i(Config.VM_TAG, "Fetch OK (${html.length} chars) — caching and loading")
+                writeCache(html)
+                withContext(Dispatchers.Main) {
                     _uiHtml.value = html
                     _currentUiSource.value = UiSource.NETWORK
-                } else {
-                    Log.w(Config.VM_TAG, "Fetch failed — falling back to cache")
+                }
+            } else {
+                Log.w(Config.VM_TAG, "Fetch failed — falling back to cache")
+                withContext(Dispatchers.Main) {
                     _toastMessage.value = Config.TOAST_FETCH_FAILED_FALLBACK
                     loadCachedOrBundled()
                 }
@@ -100,14 +102,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application), S
     }
 
     private fun loadCachedOrBundled() {
-        val cached = readCache()
-        if (cached != null) {
-            Log.i(Config.VM_TAG, "Loading from cache (${cached.length} chars)")
-            _uiHtml.value = cached
-            _currentUiSource.value = UiSource.CACHE
-        } else {
-            Log.i(Config.VM_TAG, "No cache — loading bundled asset")
-            loadBundledAsset()
+        viewModelScope.launch(Dispatchers.IO) {
+            val cached = readCache()
+            withContext(Dispatchers.Main) {
+                if (cached != null) {
+                    Log.i(Config.VM_TAG, "Loading from cache (${cached.length} chars)")
+                    _uiHtml.value = cached
+                    _currentUiSource.value = UiSource.CACHE
+                } else {
+                    Log.i(Config.VM_TAG, "No cache — loading bundled asset")
+                    loadBundledAsset()
+                }
+            }
         }
     }
 
@@ -135,19 +141,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application), S
 
     fun findDriver(): UsbSerialDriver? = usbSerialManager.findDriver()
 
-    fun openPort(driver: UsbSerialDriver) {
-        if (usbSerialManager.openPort(driver)) {
-            _isConnected.value = true
+    fun openPortSync(driver: UsbSerialDriver): Boolean {
+        val success = usbSerialManager.openPort(driver)
+        if (success) {
+            _isConnected.postValue(true)
             logToJs("✓ Port opened at ${Config.BAUD_RATE} 8N1, DTR+RTS asserted")
-            _usbEvent.value = Config.EVENT_USB_CONNECTED
+            _usbEvent.postValue(Config.EVENT_USB_CONNECTED)
         } else {
-            _usbEvent.value = Config.EVENT_USB_ERROR
+            _usbEvent.postValue(Config.EVENT_USB_ERROR)
         }
+        return success
     }
 
     fun closePort() {
         usbSerialManager.closePort()
-        _isConnected.value = false
+        _isConnected.postValue(false)
     }
 
     override fun onNewData(data: ByteArray) {
@@ -171,6 +179,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application), S
 
     fun receiveData(): String = usbSerialManager.receiveData()
 
+    fun isUsbConnected(): Boolean = usbSerialManager.isConnected
+
     fun toastMessageConsumed() {
         _toastMessage.value = null
     }
@@ -189,14 +199,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application), S
             logToJs("Permission granted, opening port...")
             val driver = findDriver()
             if (driver != null) {
-                openPort(driver)
+                openPortSync(driver)
             } else {
                 logToJs("ERROR: no driver after permission grant")
-                _usbEvent.value = Config.EVENT_USB_ERROR
+                _usbEvent.postValue(Config.EVENT_USB_ERROR)
             }
         } else {
             logToJs("Permission DENIED by user")
-            _usbEvent.value = Config.EVENT_USB_PERMISSION_DENIED
+            _usbEvent.postValue(Config.EVENT_USB_PERMISSION_DENIED)
         }
     }
 }

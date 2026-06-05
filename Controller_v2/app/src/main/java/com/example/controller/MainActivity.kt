@@ -22,6 +22,7 @@ import android.webkit.*
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import java.net.URL
@@ -41,6 +42,10 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var inLockTask = false
     private lateinit var dpm: DevicePolicyManager
     private lateinit var adminComponent: ComponentName
+
+    // Screen Dimming
+    private val inactivityHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val dimRunnable = Runnable { setScreenBrightness(Config.BRIGHTNESS_DIM) }
 
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -103,10 +108,38 @@ class MainActivity : AppCompatActivity() {
 
         viewModel.bootUiLoad()
 
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (inLockTask) {
+                    Log.d(Config.TAG, "Back pressed (consumed by kiosk)")
+                } else {
+                    Toast.makeText(this@MainActivity, "Use top-right corner gesture to exit", Toast.LENGTH_SHORT).show()
+                }
+            }
+        })
+
         window.decorView.post {
             KioskUtils.applyImmersiveMode(this)
             inLockTask = KioskUtils.enterKioskMode(this, adminComponent)
+            resetInactivityTimer() // Start the timer
         }
+    }
+
+    private fun resetInactivityTimer() {
+        inactivityHandler.removeCallbacks(dimRunnable)
+        if (window.attributes.screenBrightness == Config.BRIGHTNESS_DIM) {
+            // If we were dimmed, reload the UI on "wake" to ensure it's fresh
+            // (Optional: remove this if your UI state is too complex to reset)
+            // webView.reload() 
+        }
+        setScreenBrightness(Config.BRIGHTNESS_FULL)
+        inactivityHandler.postDelayed(dimRunnable, Config.INACTIVITY_DIM_MS)
+    }
+
+    private fun setScreenBrightness(level: Float) {
+        val params = window.attributes
+        params.screenBrightness = level
+        window.attributes = params
     }
 
     private fun setupObservers() {
@@ -165,7 +198,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun prepareWebView() {
         webView = findViewById(R.id.webView)
-        webView.setLayerType(View.LAYER_TYPE_NONE, null)
+        // Enable full hardware acceleration.
+        // On modern Android/WebView versions, LAYER_TYPE_HARDWARE is the default and 
+        // provides the best performance for animations and CSS transitions.
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         webView.setBackgroundColor(android.graphics.Color.parseColor(Config.WEBVIEW_BG_COLOR))
         webView.overScrollMode = View.OVER_SCROLL_NEVER
 
@@ -181,11 +217,36 @@ class MainActivity : AppCompatActivity() {
             blockNetworkImage = false
             loadsImagesAutomatically = true
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+            
+            // Performance optimizations
+            databaseEnabled = true
+            setRenderPriority(WebSettings.RenderPriority.HIGH)
+            // Enable hardware-accelerated features
+            setGeolocationEnabled(false)
+            setNeedInitialFocus(false)
+            // Some hardware chips benefit from disabling safe browsing in kiosk context
+            safeBrowsingEnabled = false
         }
+        
+        // Ensure no flicker during transitions
         webView.isVerticalScrollBarEnabled = false
         webView.isHorizontalScrollBarEnabled = false
         webView.addJavascriptInterface(ESP32Bridge(), Config.JS_BRIDGE_NAME)
         
+        webView.webViewClient = object : WebViewClient() {
+            override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
+                Log.e(Config.TAG, "WebView render process gone. Reloading...")
+                viewModel.bootUiLoad()
+                return true
+            }
+
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                // Optimize rendering when page starts
+                view?.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            }
+        }
+
         if (BuildConfig.DEBUG) {
             WebView.setWebContentsDebuggingEnabled(true)
             webView.webChromeClient = object : WebChromeClient() {
@@ -289,6 +350,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        resetInactivityTimer() // Reset timer on any touch
         if (ev.action == android.view.MotionEvent.ACTION_DOWN) {
             val zonePx = TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP,
@@ -300,7 +362,7 @@ class MainActivity : AppCompatActivity() {
             if (ev.y <= zonePx) {
                 if (ev.x <= zonePx) {
                     onSecretTap()
-                } else if (w > 0 && ev.x >= w - zonePx) {
+                } else if (w > 0 && ev.x >= (w / 2) - (zonePx / 2) && ev.x <= (w / 2) + (zonePx / 2)) {
                     onExitSecretTap()
                 }
             }
@@ -357,6 +419,12 @@ class MainActivity : AppCompatActivity() {
                         "To return to kiosk mode, simply relaunch the app or reboot."
             )
             .setPositiveButton("Exit Kiosk") { _, _ ->
+                // Restore status bar before exiting
+                val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                if (dpm.isDeviceOwnerApp(packageName)) {
+                    dpm.setStatusBarDisabled(adminComponent, false)
+                }
+
                 if (KioskUtils.exitKioskMode(this)) {
                     inLockTask = false
                 }
@@ -380,15 +448,6 @@ class MainActivity : AppCompatActivity() {
                 "if(typeof onUSBStatus==='function') onUSBStatus('$status')", null
             )
         }
-    }
-
-    @Deprecated("Use OnBackPressedCallback")
-    override fun onBackPressed() {
-        if (inLockTask) {
-            Log.d(Config.TAG, "Back pressed (consumed by kiosk)")
-            return
-        }
-        Toast.makeText(this, "Use top-right corner gesture to exit", Toast.LENGTH_SHORT).show()
     }
 
     override fun onUserLeaveHint() {
@@ -428,8 +487,9 @@ class MainActivity : AppCompatActivity() {
                 }
                 return "requesting_permission"
             }
-            viewModel.openPort(driver)
-            return if (viewModel.isConnected.value == true) Config.EVENT_USB_CONNECTED else "error:connection_failed"
+            
+            val success = viewModel.openPortSync(driver)
+            return if (success) Config.EVENT_USB_CONNECTED else "error:connection_failed"
         }
 
         @JavascriptInterface
@@ -449,7 +509,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
-        fun isConnected(): Boolean = viewModel.isConnected.value == true
+        fun isConnected(): Boolean = viewModel.isUsbConnected()
 
         @JavascriptInterface
         fun getDeviceList(): String {
