@@ -38,7 +38,11 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
@@ -48,6 +52,20 @@ class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
     private var serialPort: UsbSerialPort? = null
     private var ioManager: SerialInputOutputManager? = null
     private val rxQueue = ConcurrentLinkedQueue<String>()
+    // O(1) size tracking so we can bound the queue without ConcurrentLinkedQueue.size() (O(n)).
+    private val rxCount = AtomicInteger(0)
+
+    // Outbound serial writes are pushed onto this queue and drained by a
+    // dedicated writer thread, so a slow/blocking port.write() never freezes
+    // the WebView's JS-bridge thread (the source of tap-to-action lag).
+    private val txQueue = LinkedBlockingQueue<ByteArray>(2048)
+    @Volatile private var writerRunning = false
+    private var writerThread: Thread? = null
+
+    // Shared background executor for UI fetches (reused instead of spawning a
+    // new single-thread executor per fetch, which leaked threads).
+    private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+
     @Volatile private var isConnected = false
 
     private lateinit var prefs: SharedPreferences
@@ -84,6 +102,11 @@ class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
         const val CACHE_FILENAME   = "ui_cache.html"
         const val FETCH_TIMEOUT_MS = 8000   // give the server 8s to respond
         const val BASE_URL_ORIGIN  = "https://controller.local/"   // stable origin for cached/fetched HTML
+
+        // Cap buffered inbound serial chunks so a UI that stops polling
+        // receive() can't grow the queue unbounded → OOM on a 24/7 kiosk.
+        const val RX_MAX_CHUNKS    = 4096
+        const val WRITE_TIMEOUT_MS = 1000
     }
 
     private val usbReceiver = object : BroadcastReceiver() {
@@ -178,6 +201,14 @@ class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
         super.onDestroy()
         try { unregisterReceiver(usbReceiver) } catch (_: Exception) {}
         closePort()
+        ioExecutor.shutdownNow()
+        // Detach and destroy the WebView so its native resources are released
+        // instead of leaking with the (singleInstance) activity.
+        try {
+            (webView.parent as? android.view.ViewGroup)?.removeView(webView)
+            webView.removeJavascriptInterface("ESP32")
+            webView.destroy()
+        } catch (_: Exception) {}
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -187,10 +218,27 @@ class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
 
     private fun prepareWebView() {
         webView = findViewById(R.id.webView)
-        // Disable hardware acceleration to prevent UI rendering glitches ("pixels")
-        // on some kiosk hardware. Software rendering is often more stable for WebViews
-        // in these environments.
-        webView.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+        // Rendering layer choice — this is the crux of the smooth-vs-glitchy
+        // trade-off on kiosk tablet GPUs:
+        //   • LAYER_TYPE_SOFTWARE  → CPU paints everything: no glitch but slow/laggy.
+        //   • LAYER_TYPE_HARDWARE  → whole WebView in ONE giant GPU texture:
+        //                            fast but corrupts ("pixels"/ghosted text) on
+        //                            many tablet GPUs.
+        //   • LAYER_TYPE_NONE (default) → WebView's own GPU-accelerated TILED
+        //                            renderer (same engine the browser uses):
+        //                            fast AND no giant-texture corruption.
+        // We want NONE. The window itself is hardware-accelerated (see manifest),
+        // so the tiled renderer runs on the GPU.
+        webView.setLayerType(View.LAYER_TYPE_NONE, null)
+        // Opaque background matching the UI's dark theme. A transparent/white
+        // WebView surface composited over the host layout is a common source of
+        // ghosting/pixel-trail artifacts because stale pixels aren't cleared.
+        webView.setBackgroundColor(android.graphics.Color.parseColor("#06080c"))
+        // Disable overscroll. Android 12+ replaced the edge-glow with a
+        // RenderEffect-based "stretch" shader that produces stray colored
+        // pixels ("red dots") on some tablet GPUs. A kiosk UI never needs to
+        // overscroll, so turn it off entirely.
+        webView.overScrollMode = View.OVER_SCROLL_NEVER
 
         webView.settings.apply {
             javaScriptEnabled = true
@@ -200,18 +248,30 @@ class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
             useWideViewPort = true
             builtInZoomControls = false
             setSupportZoom(false)
+            // Cache aggressively so cached/bundled resources don't re-fetch.
+            cacheMode = WebSettings.LOAD_DEFAULT
+            // Don't block image autoload — avoids extra reflow passes.
+            blockNetworkImage = false
+            loadsImagesAutomatically = true
             // Allow mixed content if your URL serves http — change to NEVER_ALLOW for https only.
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         }
         webView.isVerticalScrollBarEnabled = false
         webView.isHorizontalScrollBarEnabled = false
         webView.addJavascriptInterface(ESP32Bridge(), "ESP32")
-        WebView.setWebContentsDebuggingEnabled(true)
-        webView.webChromeClient = object : WebChromeClient() {
-            override fun onConsoleMessage(msg: ConsoleMessage?): Boolean {
-                msg?.let { Log.d(TAG, "JS: ${it.message()} @ line ${it.lineNumber()}") }
-                return true
+        // Remote debugging + per-message console logging add overhead and are
+        // only useful while developing. Gate them on debug builds so production
+        // kiosks don't pay for every console.log the UI emits.
+        if (BuildConfig.DEBUG) {
+            WebView.setWebContentsDebuggingEnabled(true)
+            webView.webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(msg: ConsoleMessage?): Boolean {
+                    msg?.let { Log.d(TAG, "JS: ${it.message()} @ line ${it.lineNumber()}") }
+                    return true
+                }
             }
+        } else {
+            webView.webChromeClient = WebChromeClient()
         }
     }
 
@@ -261,7 +321,7 @@ class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
     private fun fetchUrlOrFallback(url: String) {
         Toast.makeText(this, "Fetching latest UI...", Toast.LENGTH_SHORT).show()
 
-        Executors.newSingleThreadExecutor().execute {
+        ioExecutor.execute {
             val html = try {
                 downloadString(url)
             } catch (e: Exception) {
@@ -694,6 +754,7 @@ class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
 
         serialPort = port
         ioManager = SerialInputOutputManager(port, this).also { it.start() }
+        startWriter(port)
         isConnected = true
         jsLog("✓ Port opened at $BAUD_RATE 8N1, DTR+RTS asserted")
         notifyWeb("connected")
@@ -701,16 +762,48 @@ class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
 
     private fun closePort() {
         isConnected = false
+        stopWriter()
         try { ioManager?.stop() } catch (_: Exception) {}
         try { serialPort?.close() } catch (_: Exception) {}
         ioManager = null
         serialPort = null
         rxQueue.clear()
+        rxCount.set(0)
+    }
+
+    /** Drains [txQueue] on a dedicated thread so writes never block the caller. */
+    private fun startWriter(port: UsbSerialPort) {
+        txQueue.clear()
+        writerRunning = true
+        writerThread = thread(name = "serial-writer", isDaemon = true) {
+            while (writerRunning) {
+                val data = try {
+                    txQueue.poll(200, TimeUnit.MILLISECONDS)
+                } catch (e: InterruptedException) {
+                    break
+                } ?: continue
+                try {
+                    port.write(data, WRITE_TIMEOUT_MS)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Serial write failed: ${e.message}")
+                }
+            }
+        }
+    }
+
+    private fun stopWriter() {
+        writerRunning = false
+        writerThread?.interrupt()
+        writerThread = null
+        txQueue.clear()
     }
 
     override fun onNewData(data: ByteArray) {
-        val s = String(data, Charsets.UTF_8)
-        rxQueue.add(s)
+        rxQueue.add(String(data, Charsets.UTF_8))
+        // Bound the buffer: if nobody is polling receive(), drop oldest chunks.
+        if (rxCount.incrementAndGet() > RX_MAX_CHUNKS) {
+            if (rxQueue.poll() != null) rxCount.decrementAndGet()
+        }
     }
 
     override fun onRunError(e: Exception) {
@@ -723,7 +816,11 @@ class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
 
     private fun notifyWeb(status: String) {
         runOnUiThread {
-            webView.evaluateJavascript("onUSBStatus('$status')", null)
+            // Guard against the page not having defined the handler yet
+            // (e.g. status arrives mid-load) to avoid a silent JS ReferenceError.
+            webView.evaluateJavascript(
+                "if(typeof onUSBStatus==='function')onUSBStatus('$status')", null
+            )
         }
     }
 
@@ -760,28 +857,34 @@ class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
             if (!manager.hasPermission(driver.device)) {
                 jsLog("Requesting USB permission...")
 
-                // Briefly exit Lock Task Mode so the system permission dialog
-                // can render over the app. Some OEMs suppress system dialogs
-                // over pinned/locked apps, which makes the popup never appear.
-                // The usbReceiver re-enters Lock Task after the user responds.
-                if (inLockTask) {
-                    jsLog("Temporarily exiting Lock Task for permission dialog")
-                    try {
-                        stopLockTask()
-                        inLockTask = false
-                    } catch (e: Exception) {
-                        Log.w(TAG, "stopLockTask before permission failed: ${e.message}")
+                // stopLockTask() and requestPermission() touch Activity/window
+                // state and MUST run on the main thread. @JavascriptInterface
+                // methods run on the JS-bridge thread, so marshal both onto the
+                // UI thread (and keep their order: exit lock task → show dialog).
+                runOnUiThread {
+                    // Briefly exit Lock Task Mode so the system permission dialog
+                    // can render over the app. Some OEMs suppress system dialogs
+                    // over pinned/locked apps, making the popup never appear.
+                    // The usbReceiver re-enters Lock Task after the user responds.
+                    if (inLockTask) {
+                        jsLog("Temporarily exiting Lock Task for permission dialog")
+                        try {
+                            stopLockTask()
+                            inLockTask = false
+                        } catch (e: Exception) {
+                            Log.w(TAG, "stopLockTask before permission failed: ${e.message}")
+                        }
                     }
-                }
 
-                val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-                    PendingIntent.FLAG_MUTABLE else 0
-                val permIntent = PendingIntent.getBroadcast(
-                    this@MainActivity, 0,
-                    Intent(ACTION_USB_PERMISSION).setPackage(packageName),
-                    flags
-                )
-                manager.requestPermission(driver.device, permIntent)
+                    val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                        PendingIntent.FLAG_MUTABLE else 0
+                    val permIntent = PendingIntent.getBroadcast(
+                        this@MainActivity, 0,
+                        Intent(ACTION_USB_PERMISSION).setPackage(packageName),
+                        flags
+                    )
+                    manager.requestPermission(driver.device, permIntent)
+                }
                 return "requesting_permission"
             }
             openPort()
@@ -790,16 +893,17 @@ class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
 
         @JavascriptInterface
         fun send(command: String): String {
-            val port = serialPort
-            if (!isConnected || port == null) return "error:not_connected"
-            return try {
-                val data = (command + "\n").toByteArray(Charsets.UTF_8)
-                port.write(data, 1000)
-                Log.i(TAG, "Sent '$command' (${data.size}B)")
+            if (!isConnected || serialPort == null) return "error:not_connected"
+            // Enqueue and return immediately — the writer thread performs the
+            // actual (potentially blocking) USB write. This keeps the WebView
+            // responsive even under rapid command bursts.
+            val data = (command + "\n").toByteArray(Charsets.UTF_8)
+            return if (txQueue.offer(data)) {
+                Log.i(TAG, "Queued '$command' (${data.size}B)")
                 "ok:${data.size}"
-            } catch (e: Exception) {
-                Log.e(TAG, "Send error", e)
-                "error:${e.message}"
+            } else {
+                Log.w(TAG, "TX queue full — dropped '$command'")
+                "error:queue_full"
             }
         }
 
@@ -808,6 +912,7 @@ class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
             val sb = StringBuilder()
             while (true) {
                 val chunk = rxQueue.poll() ?: break
+                rxCount.decrementAndGet()
                 sb.append(chunk)
             }
             return sb.toString()
