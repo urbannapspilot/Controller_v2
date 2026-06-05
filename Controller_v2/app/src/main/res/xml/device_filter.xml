@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- CP2102 -->
+    <usb-device vendor-id="4292" product-id="60000" />
+    <!-- CP2104 -->
+    <usb-device vendor-id="4292" product-id="60016" />
+    <!-- CP2102N -->
+    <usb-device vendor-id="4292" product-id="60017" />
+
+    <!-- CH340 -->
+    <usb-device vendor-id="6790" product-id="29987" />
+    <!-- CH341 -->
+    <usb-device vendor-id="6790" product-id="21795" />
+
+    <!-- FTDI FT232R -->
+    <usb-device vendor-id="1027" product-id="24577" />
+    <!-- FTDI FT231X -->
+    <usb-device vendor-id="1027" product-id="24597" />
+
+    <!-- ESP32-S2 native USB -->
+    <usb-device vendor-id="12346" product-id="4097" />
+    <!-- ESP32-S3 native USB -->
+    <usb-device vendor-id="12346" product-id="4098" />
+    <!-- ESP32-S3 JTAG -->
+    <usb-device vendor-id="12346" product-id="4" />
+
+    <!-- Prolific PL2303 (some boards use this) -->
+    <usb-device vendor-id="1659" product-id="8963" />
+
+    <!-- WCH CH9102 (newer boards) -->
+    <usb-device vendor-id="6790" product-id="21972" />
+</resources>
