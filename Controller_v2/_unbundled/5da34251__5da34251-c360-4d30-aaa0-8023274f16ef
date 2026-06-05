@@ -1,0 +1,238 @@
+/* AeroPod — app core: device state, firmware-ready cmd() layer, popover routing,
+   tweaks, scaling, mount. */
+const { useState, useEffect, useRef, useCallback } = React;
+const B = window.AeroBlocks;
+const D = window.AeroDirections;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "layout": "console",
+  "accent": "#ebc07a",
+  "sleep": false
+}/*EDITMODE-END*/;
+
+const PRESET_ANGLES = {
+  work:  { back: 0.00, leg: 0.00 },
+  relax: { back: 0.50, leg: 0.55 },
+  sleep: { back: 1.00, leg: 1.00 },
+};
+const STEP = 0.16;
+const clampf = (v) => Math.max(0, Math.min(1, v));
+const fmtClock = () => {
+  const d = new Date();
+  let h = d.getHours(); const m = d.getMinutes();
+  const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+  return `${h}:${String(m).padStart(2, '0')} ${ap}`;
+};
+const fmtLeft = (sec) => {
+  if (sec <= 0) return '0 min';
+  const h = Math.floor(sec / 3600);
+  const m = Math.ceil((sec % 3600) / 60);
+  return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m} min`;
+};
+window.fmtLeft = fmtLeft;
+
+function App() {
+  const [t, setTweak] = window.useTweaks(TWEAK_DEFAULTS);
+  const [st, setSt] = useState({
+    clock: fmtClock(), bookingLeft: 88 * 60,
+    preset: 'relax', back: PRESET_ANGLES.relax.back, leg: PRESET_ANGLES.relax.leg,
+    doorLocked: true,
+    fanOn: true, fanSpeed: 'medium',
+    massageOn: false, massageSpeed: 'medium',
+    musicPlaying: true, musicTrack: 1, volume: 50,
+    heatOn: false,
+    curtain: 'close',
+    lightOn: true, lightWarm: true, lightLevel: 60, lightScene: null,
+  });
+  const [pop, setPop] = useState(null);   // { type, x, y, align, width }
+  const [toasts, setToasts] = useState([]);
+  const [conn, setConn] = useState({ status: 'init', detail: '' }); // init|searching|permission|preview|connected|error|disconnected
+  const set = (patch) => setSt((s) => ({ ...s, ...patch }));
+  const bridgeRef = useRef(null);
+  const [lastLine, setLastLine] = useState('');
+
+  // ── toast (declared early; bridge callbacks use it) ──
+  const toast = useCallback((msg) => {
+    const id = Date.now() + Math.random();
+    setToasts((a) => [...a, { id, msg }]);
+    setTimeout(() => setToasts((a) => a.filter((x) => x.id !== id)), 2400);
+  }, []);
+
+  // ── hardware bridge (same ESP32 link as the original build) ──
+  useEffect(() => {
+    const bridge = window.AeroBridge.createBridge({
+      onStatus: (status, detail) => {
+        setConn({ status, detail: detail || '' });
+        if (status === 'connected') toast('Pod connected — syncing');
+      },
+      onState: (patch) => setSt((s) => ({ ...s, ...patch })),   // hardware → UI
+      onEvent: (kind, msg) => toast(msg),
+      onLast: (line) => setLastLine(line),
+    });
+    bridgeRef.current = bridge;
+    const r = bridge.connect();
+    if (r === 'preview') setConn({ status: 'preview', detail: '' });
+    return () => bridge.disconnect();
+  }, [toast]);
+
+  // ── command bus → routes through the bridge ──
+  const cmd = useCallback((name, value) => {
+    const b = bridgeRef.current; if (b) b.sendKey(name, value);
+  }, []);
+  const cmdJSON = useCallback((obj) => {
+    const b = bridgeRef.current; if (b) b.sendJSON(obj);
+  }, []);
+
+  useEffect(() => {
+    const i = setInterval(() => set({ clock: fmtClock() }), 20000);
+    return () => clearInterval(i);
+  }, []);
+
+  // booking countdown (prebooked session)
+  useEffect(() => {
+    const i = setInterval(() => setSt((s) => ({ ...s, bookingLeft: Math.max(0, s.bookingLeft - 1) })), 1000);
+    return () => clearInterval(i);
+  }, []);
+
+  // dev hook for previewing layouts/popovers during verification
+  useEffect(() => { window.__aero = { setLayout: (v) => setTweak('layout', v), bridge: () => bridgeRef.current }; });
+
+  // ── popover positioning (unified size & spacing) ──
+  const POP_W = 380;
+  const POP_META = {
+    light:   { width: POP_W, h: 280 }, curtain: { width: POP_W, h: 220 },
+  };
+  const openPop = useCallback((type, e) => {
+    const meta = POP_META[type] || { width: 260, h: 180 };
+    const root = document.getElementById('root');
+    const rr = root.getBoundingClientRect();
+    const scale = rr.width / 1280;
+    let x = 640, y = 400, align = 'center';
+    if (e && e.currentTarget) {
+      const r = e.currentTarget.getBoundingClientRect();
+      x = (r.left + r.width / 2 - rr.left) / scale;
+      const topY = (r.top - rr.top) / scale;
+      const botY = (r.bottom - rr.top) / scale;
+      if (botY + meta.h + 14 <= 788) y = botY + 12;
+      else y = Math.max(74, topY - meta.h - 12);
+    } else {
+      y = 400 - meta.h / 2;
+    }
+    setPop({ type, x, y, align, width: meta.width });
+  }, []);
+  const closePop = useCallback(() => setPop(null), []);
+
+  // ── actions ──
+  const act = {
+    toast, openPop,
+    sos: () => { cmd('SOS'); setSt((s) => { if (s.doorLocked) cmd('DOOR', 'UNLOCK'); return { ...s, doorLocked: false }; }); toast('SOS activated — buzzer sounding, door unlocked'); },
+    setPreset: (k) => { const a = PRESET_ANGLES[k]; set({ preset: k, back: a.back, leg: a.leg }); cmd('RECLINE', k.toUpperCase()); },
+    // Back: UP = more upright (less recline); Leg: UP = raise legrest. cmd reports the button intent.
+    nudge: (part, dir) => { const delta = part === 'back' ? -dir : dir; setSt((s) => ({ ...s, preset: 'custom', [part]: clampf(s[part] + delta * STEP) })); cmd(part.toUpperCase(), dir > 0 ? 'UP' : 'DOWN'); },
+    toggleDoor: () => { setSt((s) => { cmd('DOOR', s.doorLocked ? 'UNLOCK' : 'LOCK'); toast(s.doorLocked ? 'Door unlocked' : 'Door locked'); return { ...s, doorLocked: !s.doorLocked }; }); },
+    toggleFan: () => setSt((s) => { const on = !s.fanOn; cmd('FAN', on ? 'ON' : 'OFF'); return { ...s, fanOn: on, fanSpeed: on ? 'medium' : s.fanSpeed }; }),
+    setFanSpeed: (sp) => { set({ fanOn: true, fanSpeed: sp }); cmd('FAN_SPEED', sp.toUpperCase()); },
+    toggleMassage: () => setSt((s) => { const on = !s.massageOn; cmd('MASSAGE', on ? 'ON' : 'OFF'); return { ...s, massageOn: on, massageSpeed: on ? 'medium' : s.massageSpeed }; }),
+    setMassageSpeed: (sp) => { set({ massageOn: true, massageSpeed: sp }); cmd('MASSAGE_SPEED', sp.toUpperCase()); },
+    toggleMusic: () => setSt((s) => { cmd('MUSIC', s.musicPlaying ? 'PAUSE' : 'PLAY'); return { ...s, musicPlaying: !s.musicPlaying }; }),
+    musicStep: (d) => setSt((s) => { const n = (s.musicTrack + d + window.AeroMusic.TRACKS.length) % window.AeroMusic.TRACKS.length; cmdJSON({ type: 'music', track: n }); return { ...s, musicTrack: n, musicPlaying: true }; }),
+    pickTrack: (id) => { set({ musicTrack: id, musicPlaying: true }); cmdJSON({ type: 'music', track: id }); },
+    setVolume: (v) => { set({ volume: v }); cmdJSON({ type: 'music', volume: v }); },
+    toggleHeat: () => setSt((s) => { cmd('SEAT_HEAT', s.heatOn ? 'OFF' : 'ON'); return { ...s, heatOn: !s.heatOn }; }),
+    setCurtain: (k) => { set({ curtain: k }); cmd('CURTAIN', k.toUpperCase()); },
+    nudgeCurtain: (d) => { set({ curtain: 'custom' }); cmd('CURTAIN', d > 0 ? 'UP' : 'DOWN'); toast('Curtain ' + (d > 0 ? 'opening' : 'closing')); },
+    toggleLight: () => setSt((s) => { cmd('LIGHT', s.lightOn ? 'OFF' : 'ON'); return { ...s, lightOn: !s.lightOn }; }),
+    setLight: (v) => { set({ lightLevel: v, lightOn: v > 0, lightScene: null }); cmdJSON({ type: 'light', intensity: v }); },
+    setLightWarm: (w) => { set({ lightWarm: w, lightScene: null }); cmdJSON({ type: 'light', tone: w ? 'warm' : 'white' }); },
+    setLightScene: (key) => setSt((s) => { const next = s.lightScene === key ? null : key; if (next) cmdJSON({ type: 'light', scene: next }); else cmdJSON({ type: 'light', scene: 'none' }); return { ...s, lightScene: next, lightOn: true }; }),
+  };
+
+  const Layout = { console: D.Console, cockpit: D.Cockpit, calm: D.Calm }[t.layout] || D.Console;
+
+  const renderPop = () => {
+    if (!pop) return null;
+    const body = {
+      light: <B.LightPop st={st} act={act} />,
+      curtain: <B.CurtainPanel st={st} act={act} />,
+    }[pop.type];
+    return <window.AeroUI.Popover x={pop.x} y={pop.y} align={pop.align} width={pop.width} onClose={closePop}>{body}</window.AeroUI.Popover>;
+  };
+
+  return (
+    <>
+      <div className={'screen' + (t.sleep ? ' sleep' : '')} style={{ '--gold': t.accent }}>
+        <B.TopBar st={st} act={act} conn={conn} />
+        <Layout st={st} act={act} />
+        {renderPop()}
+        <div className="toast-wrap">
+          {toasts.map((x) => <Toast key={x.id} msg={x.msg} />)}
+        </div>
+        <ConnOverlay conn={conn} lastLine={lastLine}
+          onRetry={() => bridgeRef.current && bridgeRef.current.connect()}
+          onPreview={() => setConn({ status: 'preview', detail: '' })} />
+      </div>
+
+      {ReactDOM.createPortal(
+        <window.TweaksPanel>
+          <window.TweakSection label="Layout direction" />
+          <window.TweakRadio label="Layout" value={t.layout}
+            options={[{ value: 'console', label: 'Console' }, { value: 'cockpit', label: 'Cockpit' }, { value: 'calm', label: 'Calm' }]}
+            onChange={(v) => setTweak('layout', v)} />
+          <window.TweakSection label="Appearance" />
+          <window.TweakColor label="Accent" value={t.accent}
+            options={['#ebc07a', '#e6b89c', '#cfd6dd', '#cdb4e0']}
+            onChange={(v) => setTweak('accent', v)} />
+          <window.TweakToggle label="Sleep dim" value={t.sleep} onChange={(v) => setTweak('sleep', v)} />
+        </window.TweaksPanel>, document.body)}
+    </>
+  );
+}
+
+function Toast({ msg }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => { const r = requestAnimationFrame(() => setShow(true)); return () => cancelAnimationFrame(r); }, []);
+  return <div className={'toast' + (show ? ' show' : '')}><span className="tdot" />{msg}</div>;
+}
+
+// ── connection overlay (mirrors the original keyboard build) ──
+function ConnOverlay({ conn, lastLine, onRetry, onPreview }) {
+  const { status, detail } = conn;
+  // connected & preview both dismiss the overlay
+  const hidden = status === 'connected' || status === 'preview';
+  const COPY = {
+    init:       { icon: 'spin',  title: 'Starting up…',        msg: 'Initializing controller' },
+    searching:  { icon: 'spin',  title: 'Connecting to Pod…',  msg: 'Searching for pod link' },
+    permission: { icon: 'spin',  title: 'Allow USB Access',    msg: 'Confirm the USB permission prompt to continue' },
+    error:      { icon: 'err',   title: 'No Pod Link',         msg: detail || 'Could not reach the pod controller' },
+    disconnected:{ icon: 'err',  title: 'Disconnected',        msg: 'The pod link was closed' },
+  };
+  const c = COPY[status] || COPY.init;
+  return (
+    <div className={'conn-overlay' + (hidden ? ' hidden' : '')}>
+      <div className="conn-popup">
+        <div className={'conn-icon ' + (c.icon === 'err' ? 'error' : 'searching')}>
+          {c.icon === 'spin' ? <div className="spinner" /> : <span style={{ fontSize: 30 }}>⚠️</span>}
+        </div>
+        <h2>{c.title}</h2>
+        <p>{c.msg}</p>
+        {lastLine ? <div className="conn-detail">{lastLine}</div> : null}
+        <div style={{ marginTop: 4 }}>
+          {(status === 'error' || status === 'disconnected') &&
+            <button className="conn-btn conn-btn-primary" onClick={onRetry}>Retry</button>}
+          <button className="conn-btn conn-btn-secondary" onClick={onPreview}>Preview mode</button>
+        </div>
+      </div>
+    </div>);
+}
+
+// ── scale 1280×800 stage to viewport ──
+function fitStage() {
+  const root = document.getElementById('root');
+  if (!root) return;
+  const s = Math.min(window.innerWidth / 1280, window.innerHeight / 800);
+  root.style.transform = `scale(${s})`;
+}
+window.addEventListener('resize', fitStage);
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+setTimeout(fitStage, 30);

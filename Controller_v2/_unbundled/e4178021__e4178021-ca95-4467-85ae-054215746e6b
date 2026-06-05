@@ -1,0 +1,118 @@
+/* AeroPod — hardware bridge. Talks to the ESP32 WebView bridge exactly like
+   the original keyboard build: KEY:<byte> + JSON out, STATE:<char> in.
+   Exposes window.AeroBridge. */
+(function () {
+  // (name, value) → key byte, per the agreed protocol map
+  function keyFor(name, value) {
+    const v = (value == null ? '' : '' + value).toUpperCase();
+    switch (name) {
+      case 'DOOR':          return 20;
+      case 'FAN':           return 22;
+      case 'FAN_SPEED':     return v === 'LOW' ? 13 : v === 'HIGH' ? 12 : 22;
+      case 'MASSAGE':       return 17;
+      case 'MASSAGE_SPEED': return v === 'LOW' ? 3 : v === 'HIGH' ? 2 : 17;
+      case 'SEAT_HEAT':     return 4;
+      case 'LIGHT':         return 16;
+      case 'MUSIC':         return 21;
+      case 'RECLINE':       return v === 'WORK' ? 14 : v === 'RELAX' ? 8 : v === 'SLEEP' ? 9 : null;
+      case 'BACK':          return v === 'UP' ? 6 : 7;
+      case 'LEG':           return v === 'UP' ? 19 : 5;
+      case 'CURTAIN':       return ({ OPEN: 15, HALF: 23, CLOSE: 24, UP: 25, DOWN: 26 })[v] ?? null;
+      case 'SOS':           return 27;
+      default:              return null;
+    }
+  }
+
+  // incoming STATE:<char> → state patch (UPPER = on, lower = off)
+  const STATE_MAP = {
+    F: { fanOn: true }, f: { fanOn: false },
+    X: { fanOn: true, fanSpeed: 'low' },  x: { fanSpeed: 'medium' },
+    Y: { fanOn: true, fanSpeed: 'high' }, y: { fanSpeed: 'medium' },
+    W: { massageOn: true }, w: { massageOn: false },
+    I: { massageOn: true, massageSpeed: 'low' },  i: { massageSpeed: 'medium' },
+    J: { massageOn: true, massageSpeed: 'high' }, j: { massageSpeed: 'medium' },
+    H: { heatOn: true }, h: { heatOn: false },
+    L: { lightOn: true }, l: { lightOn: false },
+    M: { musicPlaying: true }, m: { musicPlaying: false },
+    D: { doorLocked: false }, d: { doorLocked: true },
+  };
+
+  function createBridge({ onStatus, onState, onEvent, onLast } = {}) {
+    let connected = false, pollTimer = null, rx = '';
+    const status = (s, extra) => onStatus && onStatus(s, extra);
+
+    function sendRaw(line) {
+      onLast && onLast('→ ' + line);
+      if (connected && typeof ESP32 !== 'undefined') {
+        try {
+          const r = ESP32.send(line);
+          if (('' + r).startsWith('error')) onEvent && onEvent('error', 'Send failed: ' + r);
+        } catch (e) { onEvent && onEvent('error', e.message); }
+      } else {
+        console.log('[CMD] ' + line);   // preview mode: log only
+      }
+    }
+    function sendKey(name, value) {
+      const b = keyFor(name, value);
+      if (b == null) { console.log('[CMD] (no key for) ' + name + ':' + value); return; }
+      sendRaw('KEY:' + b);
+    }
+    function sendJSON(obj) { sendRaw(JSON.stringify(obj)); }
+    function sync() { sendRaw('SYNC'); }
+
+    function handleLine(line) {
+      onLast && onLast('← ' + line);
+      if (line.startsWith('STATE:')) {
+        const ch = line.substring(6).trim();
+        const patch = STATE_MAP[ch];
+        if (patch) onState && onState(patch);
+      } else if (line === 'READY') { onEvent && onEvent('success', 'Pod ready'); setTimeout(sync, 300); }
+      else if (line === 'SYNC_END') { onEvent && onEvent('success', 'State synced'); }
+      else if (line.startsWith('ERR:')) { onEvent && onEvent('error', line); }
+    }
+
+    function startPoll() {
+      stopPoll();
+      pollTimer = setInterval(() => {
+        if (!connected || typeof ESP32 === 'undefined') return;
+        try {
+          const chunk = ESP32.receive();
+          if (chunk && !('' + chunk).startsWith('error') && chunk.length > 0) {
+            rx += chunk;
+            let idx;
+            while ((idx = rx.indexOf('\n')) >= 0) {
+              const line = rx.slice(0, idx).trim();
+              rx = rx.slice(idx + 1);
+              if (line) handleLine(line);
+            }
+          }
+        } catch (e) { /* ignore poll errors */ }
+      }, 120);
+    }
+    function stopPoll() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
+
+    function connect() {
+      if (typeof ESP32 === 'undefined') { status('preview'); return 'preview'; }
+      status('searching');
+      try {
+        const r = ESP32.connect();
+        if (r === 'connected') {
+          connected = true; status('connected'); startPoll();
+          setTimeout(sync, 400);
+        } else if (r === 'requesting_permission') status('permission');
+        else if (('' + r).includes('no_devices')) status('error', 'No pod link found — connect via USB');
+        else status('error', '' + r);
+        return r;
+      } catch (e) { status('error', e.message); return 'error'; }
+    }
+    function disconnect() {
+      stopPoll();
+      if (typeof ESP32 !== 'undefined') { try { ESP32.disconnect(); } catch (e) {} }
+      connected = false; status('disconnected');
+    }
+
+    return { connect, disconnect, sync, sendKey, sendJSON, sendRaw, isConnected: () => connected };
+  }
+
+  window.AeroBridge = { createBridge, keyFor, STATE_MAP };
+})();

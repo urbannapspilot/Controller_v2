@@ -1,0 +1,129 @@
+/* AeroPod — three layout directions. Each takes {st, act}. Export window.AeroDirections */
+(function () {
+  const B = window.AeroBlocks;
+  const { Segmented } = window.AeroUI;
+  const ReclineSeat = window.ReclineSeat;
+
+  const Divider = () => <div style={{ height: 1, background: 'var(--line)', margin: '4px 0' }} />;
+
+  const PRESET_SEG = [
+    { key: 'work', label: 'WORK' },
+    { key: 'relax', label: 'RELAX' }, { key: 'sleep', label: 'SLEEP' },
+  ];
+
+  // ════════ A · CONSOLE (render-faithful) ════════
+  function Console({ st, act }) {
+    return (
+      <div className="layout-fade" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14, padding: 18, minHeight: 0 }}>
+        <B.PresetRow st={st} act={act} big />
+        <div style={{ flex: 1, display: 'flex', gap: 14, minHeight: 0 }}>
+          <div style={{ flex: 1.7, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gridTemplateRows: '1fr 1fr', gap: 14 }}>
+            <B.LightTile st={st} act={act} onPop={(e) => act.openPop('light', e)} />
+            <B.FanTile st={st} act={act} />
+            <B.MusicTile st={st} act={act} />
+            <B.DoorTile st={st} act={act} />
+            <B.SeatHeatTile st={st} act={act} />
+            <B.MassageTile st={st} act={act} />
+          </div>
+          <div className="card" style={{ width: 312, padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span className="lbl">Recline</span>
+              <span className="val" style={{ textTransform: 'capitalize' }}>{st.preset === 'custom' ? 'Custom' : st.preset}</span>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 14, padding: '4px 0' }}>
+              <ReclineSeat back={st.back} leg={st.leg} height={132} />
+            </div>
+            <B.ReclineRail st={st} act={act} />
+            <Divider />
+            <B.CurtainPanel st={st} act={act} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ════════ B · COCKPIT (seat hero) ════════
+  function Cockpit({ st, act }) {
+    const MiniTile = ({ children, onClick, active }) => (
+      <div className="card press" onClick={onClick}
+           style={{ padding: 14, borderColor: active ? 'rgba(235,192,122,0.45)' : 'var(--line)' }}>{children}</div>
+    );
+    return (
+      <div className="layout-fade" style={{ flex: 1, display: 'flex', gap: 14, padding: 18, minHeight: 0 }}>
+        <div className="card" style={{ flex: 1.25, padding: 24, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span className="lbl" style={{ fontSize: 16 }}>Recline</span>
+            <span className="val" style={{ fontSize: 17, textTransform: 'capitalize' }}>{st.preset === 'custom' ? 'Custom' : st.preset}</span>
+          </div>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
+            <ReclineSeat back={st.back} leg={st.leg} height={260} />
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <Segmented cyan options={PRESET_SEG} value={st.preset} onChange={(k) => act.setPreset(k)} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+            {['back', 'leg'].map(part => (
+              <div key={part} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                       background: 'rgba(255,255,255,0.03)', border: '1px solid var(--line)', borderRadius: 14, padding: '10px 16px' }}>
+                <span className="lbl-sm">{part === 'back' ? 'Back' : 'Leg'}</span>
+                <div className="stepper">
+                  <div className="step-btn press" style={{ color: 'var(--gold)' }} onClick={() => act.nudge(part, +1)}><window.AeroIcons.IcChevUp size={20} /></div>
+                  <div className="step-btn press" style={{ color: 'var(--gold)' }} onClick={() => act.nudge(part, -1)}><window.AeroIcons.IcChevDown size={20} /></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14, minHeight: 0 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <B.LightTile st={st} act={act} onPop={(e) => act.openPop('light', e)} />
+            <B.FanTile st={st} act={act} />
+            <B.MassageTile st={st} act={act} />
+            <B.SeatHeatTile st={st} act={act} />
+          </div>
+          <B.MusicTile st={st} act={act} />
+          <div className="card" style={{ padding: 18, flex: 1 }}>
+            <B.CurtainPanel st={st} act={act} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ════════ C · CALM (sleep-first, dock) ════════
+  function Calm({ st, act }) {
+    const Dock = ({ Icon, label, on, color, onClick }) => (
+      <div className="press" onClick={onClick}
+           style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
+        <div style={{ width: 70, height: 70, borderRadius: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      border: '1px solid ' + (on ? color : 'var(--line)'), background: on ? 'rgba(235,192,122,0.10)' : 'rgba(255,255,255,0.02)',
+                      color: on ? color : '#eaf0f4' }} className={on ? 'glow-gold' : ''}>
+          <Icon size={32} />
+        </div>
+        <span className="lbl-sm" style={{ color: on ? color : 'var(--ink-2)' }}>{label}</span>
+      </div>
+    );
+    const Ic = window.AeroIcons;
+    return (
+      <div className="layout-fade" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '8px 18px 22px', minHeight: 0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 0, width: '100%' }}>
+          <ReclineSeat back={st.back} leg={st.leg} height={300} />
+          <div style={{ width: 460, marginTop: 4 }}>
+            <Segmented cyan options={PRESET_SEG} value={st.preset} onChange={(k) => act.setPreset(k)} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 26, alignItems: 'flex-start' }}>
+          <Dock Icon={Ic.IcBulb} label="LIGHT" on={st.lightOn} color="var(--gold)" onClick={(e) => act.openPop('light', e)} />
+          <Dock Icon={Ic.IcFan} label="FAN" on={st.fanOn} color="var(--gold)" onClick={() => act.toggleFan()} />
+          <Dock Icon={Ic.IcMassage} label="MASSAGE" on={st.massageOn} color="var(--gold)" onClick={() => act.toggleMassage()} />
+          <Dock Icon={Ic.IcHeat} label="SEAT HEAT" on={st.heatOn} color="var(--gold)" onClick={() => act.toggleHeat()} />
+          <Dock Icon={Ic.IcMusic} label="MUSIC" on={st.musicPlaying} color="var(--cyan)" onClick={() => act.toggleMusic()} />
+          <Dock Icon={Ic.IcCurtain} label="CURTAIN" on={st.curtain !== 'close'} color="var(--gold)" onClick={(e) => act.openPop('curtain', e)} />
+        </div>
+      </div>
+    );
+  }
+
+  window.AeroDirections = { Console, Cockpit, Calm };
+})();

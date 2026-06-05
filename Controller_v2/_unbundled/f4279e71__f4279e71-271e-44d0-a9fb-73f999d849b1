@@ -1,0 +1,146 @@
+/* AeroPod — shared interactive controls. Exports to window.AeroUI */
+(function () {
+  const { useRef, useState, useEffect, useCallback } = React;
+  const Ic = window.AeroIcons;
+
+  // ── Slider with pointer drag ────────────────────────────
+  function Slider({ value, min = 0, max = 100, onChange, style }) {
+    const ref = useRef(null);
+    const [drag, setDrag] = useState(false);
+    const pct = ((value - min) / (max - min)) * 100;
+
+    const setFromX = useCallback((clientX) => {
+      const el = ref.current; if (!el) return;
+      const r = el.getBoundingClientRect();
+      let p = (clientX - r.left) / r.width;
+      p = Math.max(0, Math.min(1, p));
+      onChange(Math.round(min + p * (max - min)));
+    }, [min, max, onChange]);
+
+    useEffect(() => {
+      if (!drag) return;
+      const move = (e) => { e.preventDefault(); setFromX(e.touches ? e.touches[0].clientX : e.clientX); };
+      const up = () => setDrag(false);
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    }, [drag, setFromX]);
+
+    return (
+      <div ref={ref} className={'slider' + (drag ? ' dragging' : '')} style={style}
+           onPointerDown={(e) => { setDrag(true); setFromX(e.clientX); }}>
+        <div className="track" />
+        <div className="fill" style={{ width: pct + '%' }} />
+        <div className="knob" style={{ left: pct + '%' }} />
+      </div>
+    );
+  }
+
+  // ── Toggle switch ───────────────────────────────────────
+  function Switch({ on, onChange }) {
+    return (
+      <div className={'switch' + (on ? ' on' : '')} onClick={(e) => { e.stopPropagation(); onChange(!on); }}>
+        <div className="dot" />
+      </div>
+    );
+  }
+
+  // ── Stepped slider (discrete stops, drag or tap) ────────
+  function StepSlider({ count, index, onChange, labels, disabled, color = 'var(--gold)' }) {
+    const ref = useRef(null);
+    const [drag, setDrag] = useState(false);
+    const clampI = (i) => Math.max(0, Math.min(count - 1, i));
+    const pct = count > 1 ? (index / (count - 1)) * 100 : 0;
+
+    const setFromX = useCallback((clientX) => {
+      const el = ref.current; if (!el) return;
+      const r = el.getBoundingClientRect();
+      let p = (clientX - r.left) / r.width;
+      p = Math.max(0, Math.min(1, p));
+      onChange(clampI(Math.round(p * (count - 1))));
+    }, [count, onChange]);
+
+    useEffect(() => {
+      if (!drag) return;
+      const move = (e) => { e.preventDefault(); setFromX(e.touches ? e.touches[0].clientX : e.clientX); };
+      const up = () => setDrag(false);
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    }, [drag, setFromX]);
+
+    return (
+      <div onClick={(e) => e.stopPropagation()}
+           style={{ opacity: disabled ? 0.4 : 1, pointerEvents: disabled ? 'none' : 'auto', transition: 'opacity .2s' }}>
+        <div ref={ref} className={'slider' + (drag ? ' dragging' : '')} style={{ height: 30 }}
+             onPointerDown={(e) => { e.stopPropagation(); setDrag(true); setFromX(e.clientX); }}>
+          <div className="track" />
+          <div className="fill" style={{ width: pct + '%', background: 'linear-gradient(90deg, var(--gold-2), ' + color + ')' }} />
+          {Array.from({ length: count }).map((_, i) => (
+            <div key={i} style={{ position: 'absolute', left: (count > 1 ? (i / (count - 1)) * 100 : 0) + '%',
+              transform: 'translateX(-50%)', width: 7, height: 7, borderRadius: '50%',
+              background: i <= index ? color : 'var(--track)', border: '1px solid rgba(255,255,255,0.12)' }} />
+          ))}
+          <div className="knob" style={{ left: pct + '%', background: color }} />
+        </div>
+        {labels &&
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
+            {labels.map((l, i) =>
+              <span key={l} onClick={(e) => { e.stopPropagation(); !disabled && onChange(i); }}
+                style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.5, cursor: 'pointer',
+                  color: i === index ? color : 'var(--ink-3)' }}>{l}</span>)}
+          </div>}
+      </div>
+    );
+  }
+
+  // ── Stepper button ──────────────────────────────────────
+  function StepBtn({ dir, onClick }) {
+    return (
+      <div className="step-btn"
+           onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onClick(); }}
+           style={{ color: 'var(--gold)' }}>
+        {dir === 'up' ? <Ic.IcChevUp size={20} /> : <Ic.IcChevDown size={20} />}
+      </div>
+    );
+  }
+
+  // ── Segmented control ───────────────────────────────────
+  function Segmented({ options, value, onChange, cyan }) {
+    return (
+      <div className={'seg' + (cyan ? ' cyan' : '')}>
+        {options.map((o) => (
+          <button key={o.key} className={value === o.key ? 'active' : ''} onClick={() => onChange(o.key)}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  // ── Round icon button ───────────────────────────────────
+  function IconBtn({ children, onClick, className = '', size, color }) {
+    return (
+      <div className={'iconbtn press ' + className} onClick={onClick}
+           style={{ ...(size ? { width: size, height: size } : {}), color: color || 'var(--ink)' }}>
+        {children}
+      </div>
+    );
+  }
+
+  // ── Popover (anchored, click-out to close) ──────────────
+  function Popover({ x, y, onClose, children, width = 250, align = 'center' }) {
+    let left = x;
+    if (align === 'center') left = x - width / 2;
+    if (align === 'right') left = x - width;
+    left = Math.max(16, Math.min(left, 1280 - width - 16));
+    return (
+      <>
+        <div className="pop-overlay" onClick={onClose} />
+        <div className="popover" style={{ left, top: y, width }}>{children}</div>
+      </>
+    );
+  }
+
+  window.AeroUI = { Slider, StepSlider, Switch, StepBtn, Segmented, IconBtn, Popover };
+})();

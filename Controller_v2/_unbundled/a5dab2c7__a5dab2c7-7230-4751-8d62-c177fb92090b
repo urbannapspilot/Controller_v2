@@ -1,0 +1,142 @@
+/* AeroPod — monoline icon set. Stroke = currentColor; color via parent. */
+(function () {
+  const S = ({ children, vb = '0 0 48 48', size = 40, sw = 2, fill = 'none', style, className }) => (
+    <svg viewBox={vb} width={size} height={size} fill={fill} stroke="currentColor"
+         strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"
+         style={style} className={className}>{children}</svg>
+  );
+
+  // ── recline preset poses (side view person) ─────────────
+  const IcSit = (p) => (
+    <S {...p}>
+      <circle cx="17" cy="11" r="4" fill="currentColor" stroke="none" />
+      <path d="M17 15 L19 27 L31 27" />
+      <path d="M19 27 L19 38 M31 27 L31 38" />
+      <path d="M17 18 L26 21" />
+      <path d="M13 38 L35 38" opacity="0.5" />
+    </S>
+  );
+  const IcWork = (p) => (
+    <S {...p}>
+      <rect x="12" y="12" width="24" height="17" rx="2" />
+      <path d="M19 36 L29 36 M24 29 L24 36" />
+      <path d="M16 23 L21 19 L25 22 L32 16" opacity="0.7" />
+    </S>
+  );
+  const IcRelax = (p) => (
+    <S {...p}>
+      <circle cx="14" cy="15" r="4" fill="currentColor" stroke="none" />
+      <path d="M16 18 L27 24 L36 21" />
+      <path d="M27 24 L26 34 L34 34" />
+      <path d="M11 34 L26 34" opacity="0.5" />
+    </S>
+  );
+  const IcSleep = (p) => (
+    <S {...p}>
+      <circle cx="13" cy="20" r="4" fill="currentColor" stroke="none" />
+      <path d="M17 23 L37 23" />
+      <path d="M10 30 L38 30" />
+      <path d="M22 23 L23 19 L27 19" opacity="0.7" />
+    </S>
+  );
+
+  // ── controls ────────────────────────────────────────────
+  const IcBulb = (p) => (
+    <S {...p}>
+      <path d="M24 9 a11 11 0 0 0 -7 19 c1.5 1.3 2.4 2.6 2.6 4.5 h8.8 c0.2 -1.9 1.1 -3.2 2.6 -4.5 a11 11 0 0 0 -7 -19 z" />
+      <path d="M20 36 h8 M21.5 39.5 h5" />
+    </S>
+  );
+  const IcFan = (p) => (
+    <S {...p} sw={p.sw || 2}>
+      <circle cx="24" cy="24" r="3.2" fill="currentColor" stroke="none" />
+      <path d="M24 21 C22 12 16 9 14 12 C12 15 18 19 24 21 Z" />
+      <path d="M27 24 C36 22 39 16 36 14 C33 12 29 18 27 24 Z" />
+      <path d="M24 27 C26 36 32 39 34 36 C36 33 30 29 24 27 Z" />
+      <path d="M21 24 C12 26 9 32 12 34 C15 36 19 30 21 24 Z" />
+    </S>
+  );
+  const IcMusic = (p) => (
+    <S {...p}>
+      <path d="M19 31 V15 L34 12 V28" />
+      <circle cx="15.5" cy="31" r="3.6" fill="currentColor" stroke="none" />
+      <circle cx="30.5" cy="28" r="3.6" fill="currentColor" stroke="none" />
+    </S>
+  );
+  const IcThermo = (p) => (
+    <S {...p}>
+      <path d="M21 26 V13 a3 3 0 0 1 6 0 V26 a6 6 0 1 1 -6 0 z" />
+      <circle cx="24" cy="32" r="3.2" fill="currentColor" stroke="none" />
+      <path d="M24 32 V20" />
+    </S>
+  );
+  const IcHeat = (p) => (
+    <S {...p}>
+      <path d="M18 34 q-3 -4 0 -8 q3 -4 0 -8 q-3 -4 0 -8" />
+      <path d="M24 34 q-3 -4 0 -8 q3 -4 0 -8 q-3 -4 0 -8" />
+      <path d="M30 34 q-3 -4 0 -8 q3 -4 0 -8 q-3 -4 0 -8" />
+    </S>
+  );
+  const IcMassage = (p) => (
+    <S {...p}>
+      <circle cx="24" cy="14" r="4.5" fill="currentColor" stroke="none" />
+      <path d="M17 33 q0 -8 7 -8 q7 0 7 8" />
+      <path d="M12 18 q-2.5 6 0 12 M37 18 q2.5 6 0 12" opacity="0.7" />
+      <path d="M8 16 q-3.5 8 0 16 M41 16 q3.5 8 0 16" opacity="0.4" />
+    </S>
+  );
+  const IcCurtain = (p) => (
+    <S {...p}>
+      <path d="M9 9 H39" />
+      <path d="M13 9 q3 14 0 28 M21 9 q3 14 0 28 M27 9 q-3 14 0 28 M35 9 q-3 14 0 28" />
+    </S>
+  );
+  const IcDoor = (p) => (
+    <S {...p}>
+      <rect x="14" y="9" width="20" height="30" rx="2" />
+      <path d="M14 39 H34" />
+      <circle cx="29" cy="24" r="1.6" fill="currentColor" stroke="none" />
+    </S>
+  );
+
+  // ── lock / unlock ───────────────────────────────────────
+  const IcLock = (p) => (
+    <S {...p} vb="0 0 24 24" sw={p.sw || 1.9}>
+      <rect x="5" y="11" width="14" height="9" rx="2.5" />
+      <path d="M8 11 V8 a4 4 0 0 1 8 0 v3" />
+    </S>
+  );
+  const IcUnlock = (p) => (
+    <S {...p} vb="0 0 24 24" sw={p.sw || 1.9}>
+      <rect x="5" y="11" width="14" height="9" rx="2.5" />
+      <path d="M8 11 V8 a4 4 0 0 1 7.5 -1.8" />
+    </S>
+  );
+
+  // ── chevrons / arrows ───────────────────────────────────
+  const IcChevUp   = (p) => (<S {...p} vb="0 0 24 24" sw={p.sw || 2.4}><path d="M6 15 L12 9 L18 15" /></S>);
+  const IcChevDown = (p) => (<S {...p} vb="0 0 24 24" sw={p.sw || 2.4}><path d="M6 9 L12 15 L18 9" /></S>);
+  const IcChevR    = (p) => (<S {...p} vb="0 0 24 24" sw={p.sw || 2.2}><path d="M9 6 L15 12 L9 18" /></S>);
+
+  // ── media transport ─────────────────────────────────────
+  const IcPlay  = (p) => (<S {...p} vb="0 0 24 24"><path d="M8 5 L19 12 L8 19 Z" fill="currentColor" stroke="none" /></S>);
+  const IcPause = (p) => (<S {...p} vb="0 0 24 24"><rect x="7" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none" /><rect x="13" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none" /></S>);
+  const IcPrev  = (p) => (<S {...p} vb="0 0 24 24"><path d="M18 6 L9 12 L18 18 Z" fill="currentColor" stroke="none" /><rect x="5" y="6" width="2.6" height="12" rx="1" fill="currentColor" stroke="none" /></S>);
+  const IcNext  = (p) => (<S {...p} vb="0 0 24 24"><path d="M6 6 L15 12 L6 18 Z" fill="currentColor" stroke="none" /><rect x="16.4" y="6" width="2.6" height="12" rx="1" fill="currentColor" stroke="none" /></S>);
+
+  // ── misc ─────────────────────────────────────────────────
+  const IcTarget = (p) => (<S {...p} vb="0 0 24 24" sw={p.sw || 1.8}><circle cx="12" cy="12" r="7" /><path d="M12 2 V5 M12 19 V22 M2 12 H5 M19 12 H22" /><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" /></S>);
+  const IcClock = (p) => (<S {...p} vb="0 0 24 24" sw={p.sw || 1.9}><circle cx="12" cy="12" r="9" /><path d="M12 7 V12 L15.5 14" /></S>);
+  const IcSun  = (p) => (<S {...p} vb="0 0 24 24" sw={p.sw || 1.9}><circle cx="12" cy="12" r="4.5" /><path d="M12 2.5 V5 M12 19 V21.5 M2.5 12 H5 M19 12 H21.5 M5 5 L6.8 6.8 M19 19 L17.2 17.2 M19 5 L17.2 6.8 M5 19 L6.8 17.2" /></S>);
+  const IcMoon = (p) => (<S {...p} vb="0 0 24 24" sw={p.sw || 1.9}><path d="M20 14.5 A8 8 0 1 1 10.5 4 A6.2 6.2 0 0 0 20 14.5 Z" /></S>);
+  const IcWind = (p) => (<S {...p} vb="0 0 24 24" sw={p.sw || 2.2}><path d="M3 8 H14 a2.5 2.5 0 1 0 -2.5 -2.5" /><path d="M3 13 H17 a3 3 0 1 0 -3 3" /><path d="M3 18 H11 a2 2 0 1 0 -2 -2" opacity="0.6" /></S>);
+  const IcVolume = (p) => (<S {...p} vb="0 0 24 24" sw={p.sw || 1.9}><path d="M4 9 H8 L13 5 V19 L8 15 H4 Z" fill="currentColor" stroke="none"/><path d="M16.5 8.8 a4.5 4.5 0 0 1 0 6.4 M19 6.3 a8 8 0 0 1 0 11.4"/></S>);
+
+  window.AeroIcons = {
+    IcSit, IcWork, IcRelax, IcSleep,
+    IcBulb, IcFan, IcMusic, IcThermo, IcHeat, IcMassage, IcCurtain, IcDoor,
+    IcLock, IcUnlock, IcChevUp, IcChevDown, IcChevR,
+    IcPlay, IcPause, IcPrev, IcNext,
+    IcTarget, IcClock, IcSun, IcMoon, IcWind, IcVolume,
+  };
+})();

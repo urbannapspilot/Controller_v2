@@ -1,0 +1,260 @@
+/* AeroPod — presentational blocks. Take {st, act}. Export window.AeroBlocks */
+(function () {
+  const Ic = window.AeroIcons;
+  const { Slider, StepSlider, Switch, StepBtn, Segmented, IconBtn } = window.AeroUI;
+  const { MusicPlayer, TRACKS, Cover } = window.AeroMusic;
+
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+  // ── Top bar ─────────────────────────────────────────────
+  function TopBar({ st, act, conn }) {
+    const locked = st.doorLocked;
+    const cs = conn ? conn.status : 'preview';
+    const dotColor = cs === 'connected' ? 'var(--cyan)' : cs === 'preview' ? 'var(--ink-3)' : (cs === 'error' || cs === 'disconnected') ? 'var(--danger)' : 'var(--gold)';
+    const dotLabel = cs === 'connected' ? 'LINKED' : cs === 'preview' ? 'PREVIEW' : (cs === 'error' || cs === 'disconnected') ? 'NO LINK' : 'LINKING';
+    return (
+      <div className="topbar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, minWidth: 300 }}>
+          <span className="clock">{st.clock}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }} title={'Pod link: ' + dotLabel}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor, boxShadow: '0 0 0 3px ' + dotColor + '22' }} />
+            <span style={{ fontSize: 9, letterSpacing: 1.2, color: 'var(--ink-3)', fontWeight: 700 }}>{dotLabel}</span>
+          </span>
+          <div className={'door-pill ' + (locked ? 'locked' : 'unlocked')} onClick={act.toggleDoor}>
+            <span className="dp-label">DOOR</span>
+            <span className="dp-state">{locked ? 'LOCKED' : 'UNLOCKED'}</span>
+            <span className="dp-ico" style={{ color: locked ? 'var(--cyan)' : 'var(--gold)' }}>
+              {locked ? <Ic.IcLock size={18} /> : <Ic.IcUnlock size={18} />}
+            </span>
+          </div>
+        </div>
+        <span className="title">AeroPod 01</span>
+        <div className="right" style={{ minWidth: 300, justifyContent: 'flex-end' }}>
+          <div className="booking" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            <span style={{ color: (st.bookingLeft <= 600) ? 'var(--danger)' : 'var(--cyan)', display: 'flex' }}><Ic.IcClock size={20} /></span>
+            <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.12 }}>
+              <span style={{ fontSize: 9, letterSpacing: 1.4, color: 'var(--ink-3)', fontWeight: 600 }}>SESSION LEFT</span>
+              <span style={{ fontSize: 16, fontWeight: 600, color: (st.bookingLeft <= 600) ? 'var(--danger)' : 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{window.fmtLeft(st.bookingLeft)}</span>
+            </span>
+          </div>
+          <button className="sos" onClick={() => act.sos()}>SOS</button>
+        </div>
+      </div>);
+
+  }
+
+  // ── Preset card ─────────────────────────────────────────
+  const PRESETS = [
+  { key: 'work', Icon: Ic.IcWork, name: 'WORK', sub: 'Upright for work' },
+  { key: 'relax', Icon: Ic.IcRelax, name: 'RELAX', sub: 'Recline & unwind' },
+  { key: 'sleep', Icon: Ic.IcSleep, name: 'SLEEP', sub: 'Full flat bed for deep sleep' }];
+
+  function PresetCard({ p, active, onClick, big }) {
+    const { Icon } = p;
+    return (
+      <div className="card press" onClick={onClick}
+      style={{ padding: big ? '22px 16px' : '16px 12px', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', gap: big ? 12 : 8, textAlign: 'center', flex: 1,
+        borderColor: active ? 'var(--cyan)' : 'var(--line)',
+        boxShadow: active ? '0 0 0 1px var(--cyan), 0 0 24px rgba(95,212,226,0.12)' : 'none' }}>
+        <span className={active ? 'glow-cyan' : 'glow-white'} style={{ color: active ? 'var(--cyan)' : '#eaf0f4' }}>
+          <Icon size={big ? 46 : 40} />
+        </span>
+        <div style={{ fontSize: big ? 19 : 16, fontWeight: 600, letterSpacing: '1px',
+          color: active ? 'var(--cyan)' : 'var(--ink)' }}>{p.name}</div>
+        {big && <div className="sub" style={{ maxWidth: 150 }}>{p.sub}</div>}
+      </div>);
+
+  }
+  function PresetRow({ st, act, big }) {
+    return (
+      <div style={{ display: 'flex', gap: 14 }}>
+        {PRESETS.map((p) => <PresetCard key={p.key} p={p} big={big} active={st.preset === p.key} onClick={() => act.setPreset(p.key)} />)}
+      </div>);
+
+  }
+
+  // ── Recline stepper rail ────────────────────────────────
+  function ReclineRail({ st, act }) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span className="lbl-sm">Back</span>
+          <div className="stepper">
+            <StepBtn dir="up" onClick={() => act.nudge('back', +1)} />
+            <StepBtn dir="down" onClick={() => act.nudge('back', -1)} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span className="lbl-sm">Leg</span>
+          <div className="stepper">
+            <StepBtn dir="up" onClick={() => act.nudge('leg', +1)} />
+            <StepBtn dir="down" onClick={() => act.nudge('leg', -1)} />
+          </div>
+        </div>
+      </div>);
+
+  }
+
+  // ── Generic control tile ────────────────────────────────
+  function Tile({ Icon, iconColor, glow, label, value, valueColor, onClick, active, children, hint, style }) {
+    return (
+      <div className="card press" onClick={onClick}
+      style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14, justifyContent: 'center',
+        borderColor: active ? 'rgba(235,192,122,0.45)' : 'var(--line)', ...style }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <span className={glow || 'glow-white'} style={{ color: iconColor || '#eaf0f4', display: 'flex' }}>
+            <Icon size={34} />
+          </span>
+          <span className="lbl" style={{ flex: 1 }}>{label}</span>
+          {value != null && <span className="val" style={{ color: valueColor || 'var(--cyan)' }}>{value}</span>}
+        </div>
+        {children}
+        {hint && <div className="sub" style={{ fontSize: 12, color: 'var(--ink-3)' }}>{hint}</div>}
+      </div>);
+
+  }
+
+  // ── Specific tiles ──────────────────────────────────────
+  function LightTile({ st, act, onPop }) {
+    const v = st.lightOn ? (st.lightScene ? cap(st.lightScene) : st.lightWarm ? 'Warm White' : 'White') : 'Off';
+    return (
+      <Tile Icon={Ic.IcBulb} iconColor={st.lightOn ? 'var(--gold)' : '#eaf0f4'} glow={st.lightOn ? 'glow-gold' : 'glow-white'}
+      label="Light" active={st.lightOn} onClick={onPop} hint="Tap to explore"
+      value={<Switch on={st.lightOn} onChange={() => act.toggleLight()} />} valueColor="var(--ink)">
+        <div className="sub" style={{ fontSize: 13, color: st.lightOn ? 'var(--cyan)' : 'var(--ink-3)', fontWeight: 600 }}>{v}</div>
+      </Tile>);
+
+  }
+  const SPEEDS = ['low', 'medium', 'high'];
+  function FanTile({ st, act }) {
+    const idx = SPEEDS.indexOf(st.fanSpeed) < 0 ? 1 : SPEEDS.indexOf(st.fanSpeed);
+    return (
+      <Tile Icon={Ic.IcFan} label="Fan" active={st.fanOn} onClick={() => act.toggleFan()}
+      value={<Switch on={st.fanOn} onChange={() => act.toggleFan()} />} valueColor="var(--ink)">
+        <StepSlider count={3} index={idx} labels={['Low', 'Medium', 'High']} disabled={!st.fanOn}
+          onChange={(i) => act.setFanSpeed(SPEEDS[i])} />
+      </Tile>);
+
+  }
+  function MassageTile({ st, act }) {
+    const idx = SPEEDS.indexOf(st.massageSpeed) < 0 ? 1 : SPEEDS.indexOf(st.massageSpeed);
+    return (
+      <Tile Icon={Ic.IcMassage} label="Massage" active={st.massageOn} onClick={() => act.toggleMassage()}
+      value={<Switch on={st.massageOn} onChange={() => act.toggleMassage()} />} valueColor="var(--ink)">
+        <StepSlider count={3} index={idx} labels={['Low', 'Medium', 'High']} disabled={!st.massageOn}
+          onChange={(i) => act.setMassageSpeed(SPEEDS[i])} />
+      </Tile>);
+
+  }
+  function SeatHeatTile({ st, act }) {
+    return (
+      <Tile Icon={Ic.IcHeat} iconColor={st.heatOn ? 'var(--gold)' : '#eaf0f4'} glow={st.heatOn ? 'glow-gold' : 'glow-white'}
+      label="Seat Heat" active={st.heatOn} onClick={() => act.toggleHeat()}
+      value={<Switch on={st.heatOn} onChange={() => act.toggleHeat()} />} valueColor="var(--ink)" />);
+
+  }
+  function DoorTile({ st, act }) {
+    const locked = st.doorLocked;
+    return (
+      <Tile Icon={locked ? Ic.IcLock : Ic.IcUnlock}
+      iconColor={locked ? 'var(--cyan)' : 'var(--gold)'} glow={locked ? 'glow-cyan' : 'glow-gold'}
+      label="Door" active={!locked} onClick={() => act.toggleDoor()}
+      value={locked ? 'Locked' : 'Unlocked'} valueColor={locked ? 'var(--cyan)' : 'var(--gold)'}
+      hint={locked ? 'Tap to unlock' : 'Tap to lock'} />);
+
+  }
+  function MusicTile({ st, act, onPop }) {
+    const t = TRACKS[st.musicTrack];
+    return (
+      <div className="card press" onClick={() => act.toggleMusic()} style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12, justifyContent: 'center', borderColor: st.musicPlaying ? 'rgba(235,192,122,0.45)' : 'var(--line)' }} data-comment-anchor="dcbab9b091-div-143-7">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <Cover t={t} size={48} radius={11} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="lbl-sm" style={{ marginBottom: 3 }}>Music</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</div>
+          </div>
+          <div className="iconbtn press primary" onClick={(e) => {e.stopPropagation();act.toggleMusic();}} style={{ color: '#1a1205' }}>
+            {st.musicPlaying ? <Ic.IcPause size={20} /> : <Ic.IcPlay size={20} />}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }} onClick={(e) => e.stopPropagation()}>
+          <span style={{ color: 'var(--ink-3)', display: 'flex', flexShrink: 0 }}><Ic.IcVolume size={20} /></span>
+          <Slider value={st.volume} onChange={(v) => act.setVolume(v)} style={{ flex: 1 }} />
+          <span className="val" style={{ minWidth: 38, textAlign: 'right', fontSize: 13 }}>{st.volume}%</span>
+        </div>
+      </div>);
+
+  }
+
+  // ── Curtain panel ───────────────────────────────────────
+  function CurtainPanel({ st, act }) {
+    const opts = [{ key: 'open', label: 'FULL OPEN' }, { key: 'close', label: 'FULL CLOSE' }];
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="glow-white" style={{ color: '#eaf0f4', display: 'flex' }}><Ic.IcCurtain size={26} /></span>
+          <span className="lbl" style={{ flex: 1 }}>Curtain</span>
+          <span className="val">{cap(st.curtain)}</span>
+        </div>
+        <Segmented options={opts} value={st.curtain} onChange={(k) => act.setCurtain(k)} />
+        <div className="stepper" style={{ justifyContent: 'center', gap: 14 }}>
+          <div className="step-btn press" style={{ width: 'auto', padding: '0 20px', gap: 8, color: 'var(--gold)' }} onClick={() => act.nudgeCurtain(+1)}>
+            <Ic.IcChevUp size={18} /><span className="lbl-sm" style={{ color: 'var(--ink-2)' }}>Up</span>
+          </div>
+          <div className="step-btn press" style={{ width: 'auto', padding: '0 20px', gap: 8, color: 'var(--gold)' }} onClick={() => act.nudgeCurtain(-1)}>
+            <Ic.IcChevDown size={18} /><span className="lbl-sm" style={{ color: 'var(--ink-2)' }}>Down</span>
+          </div>
+        </div>
+      </div>);
+
+  }
+
+  // ── Popover contents ────────────────────────────────────
+  function LightPop({ st, act }) {
+    return (
+      <div>
+        <div className="pop-title">
+          <span className={st.lightOn ? 'glow-gold' : 'glow-white'} style={{ color: st.lightOn ? 'var(--gold)' : 'var(--ink)', display: 'flex' }}><Ic.IcBulb size={26} /></span>
+          <span className="lbl" style={{ flex: 1 }}>Light</span>
+          <Switch on={st.lightOn} onChange={() => act.toggleLight()} />
+        </div>
+        <div style={{ opacity: st.lightOn ? 1 : 0.4, pointerEvents: st.lightOn ? 'auto' : 'none', transition: 'opacity .2s', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <Segmented options={[{ key: 'warm', label: 'WARM WHITE' }, { key: 'cool', label: 'WHITE' }]}
+          value={st.lightWarm ? 'warm' : 'cool'} onChange={(k) => act.setLightWarm(k === 'warm')} />
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span className="lbl-sm">Mood scenes</span>
+              {st.lightScene && <span className="val" style={{ textTransform: 'capitalize' }}>{st.lightScene}</span>}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[{ k: 'sunset', n: 'Sunset', c: '#e8a05a' }, { k: 'forest', n: 'Forest', c: '#5aa67a' }, { k: 'ocean', n: 'Ocean', c: '#5a93c4' }, { k: 'focus', n: 'Focus', c: '#b48ce0' }].map((m) => {
+                const sel = st.lightScene === m.k;
+                return (
+                  <div key={m.k} className="press" onClick={() => act.setLightScene(m.k)}
+                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '8px 4px', borderRadius: 12, cursor: 'pointer',
+                             border: '1px solid ' + (sel ? m.c : 'var(--line)'), background: sel ? 'rgba(255,255,255,0.04)' : 'transparent' }}>
+                    <span style={{ width: 30, height: 30, borderRadius: 9, background: m.c,
+                                   boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.25)' + (sel ? ', 0 0 10px ' + m.c : '') }} />
+                    <span style={{ fontSize: 10, color: sel ? 'var(--ink)' : 'var(--ink-2)', fontWeight: 600 }}>{m.n}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>);
+
+  }
+  function MusicPop({ st, act }) {
+    return <MusicPlayer track={st.musicTrack} playing={st.musicPlaying} volume={st.volume}
+    onPlay={() => act.toggleMusic()} onPrev={() => act.musicStep(-1)}
+    onNext={() => act.musicStep(1)} onPick={(id) => act.pickTrack(id)} onVolume={(v) => act.setVolume(v)} />;
+  }
+
+  window.AeroBlocks = {
+    TopBar, PRESETS, PresetCard, PresetRow, ReclineRail, Tile,
+    LightTile, FanTile, MassageTile, SeatHeatTile, DoorTile, MusicTile,
+    CurtainPanel, LightPop, MusicPop
+  };
+})();

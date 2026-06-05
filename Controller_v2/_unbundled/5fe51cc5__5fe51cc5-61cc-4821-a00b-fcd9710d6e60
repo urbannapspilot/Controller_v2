@@ -1,0 +1,104 @@
+/* AeroPod — meditation music: 6 named presets with generated cover art. */
+(function () {
+  const Ic = window.AeroIcons;
+
+  const TRACKS = [
+    { id: 0, name: 'Deep Rest',  desc: 'Ambient · 42 min', g: ['#3b3a6b', '#6d4d8c'], motif: 'rings' },
+    { id: 1, name: 'Ocean',      desc: 'Waves · 58 min',   g: ['#185a6b', '#2f9bb0'], motif: 'wave' },
+    { id: 2, name: 'Rainfall',   desc: 'Nature · 60 min',  g: ['#26323f', '#4a7d8c'], motif: 'lines' },
+    { id: 3, name: 'Forest',     desc: 'Nature · 45 min',  g: ['#1f4a3a', '#3f8c6a'], motif: 'rings' },
+    { id: 4, name: 'Focus Flow', desc: 'Binaural · 90 min',g: ['#7a5320', '#caa35a'], motif: 'wave' },
+    { id: 5, name: 'Night Sky',  desc: 'Sleep · 8 hr',     g: ['#1a2342', '#473a78'], motif: 'stars' },
+  ];
+
+  function Cover({ t, size = 60, radius = 13 }) {
+    const motif = {
+      rings: <g fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="2"><circle cx="30" cy="30" r="8"/><circle cx="30" cy="30" r="15"/><circle cx="30" cy="30" r="22"/></g>,
+      wave:  <path d="M2 38 Q12 26 22 38 T42 38 T62 38" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2.4"/>,
+      lines: <g stroke="rgba(255,255,255,0.32)" strokeWidth="2" strokeLinecap="round"><path d="M16 14 L10 30"/><path d="M28 12 L22 32"/><path d="M40 16 L34 30"/><path d="M50 14 L44 32"/></g>,
+      stars: <g fill="rgba(255,255,255,0.55)"><circle cx="16" cy="20" r="1.6"/><circle cx="34" cy="14" r="1.2"/><circle cx="44" cy="26" r="1.8"/><circle cx="24" cy="34" r="1.3"/><circle cx="40" cy="40" r="1.5"/></g>,
+    }[t.motif];
+    return (
+      <div style={{ width: size, height: size, borderRadius: radius, overflow: 'hidden', flexShrink: 0,
+                    background: `linear-gradient(140deg, ${t.g[0]}, ${t.g[1]})`,
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)' }}>
+        <svg viewBox="0 0 60 60" width={size} height={size} style={{ display: 'block' }}>
+          <radialGradient id={'cg' + t.id} cx="30%" cy="25%" r="80%">
+            <stop offset="0%" stopColor="rgba(255,255,255,0.25)" />
+            <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+          </radialGradient>
+          <rect width="60" height="60" fill={`url(#cg${t.id})`} />
+          {motif}
+        </svg>
+      </div>
+    );
+  }
+
+  // Equalizer animation when playing
+  function Eq({ playing }) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 18 }}>
+        {[0,1,2,3,4].map(i => (
+          <div key={i} style={{
+            width: 3, borderRadius: 2, background: 'var(--cyan)',
+            height: playing ? undefined : 4,
+            animation: playing ? `eqb 0.9s ease-in-out ${i*0.12}s infinite` : 'none',
+            transformOrigin: 'bottom',
+          }} className={playing ? 'eqbar' : ''} />
+        ))}
+      </div>
+    );
+  }
+
+  // Full player (used in Music popover / panel)
+  function MusicPlayer({ track, playing, volume = 45, onPlay, onPrev, onNext, onPick, onVolume, compact }) {
+    const t = TRACKS[track];
+    const Slider = window.AeroUI.Slider;
+    const StepSlider = window.AeroUI.StepSlider;
+    const VOL_STOPS = [0, 25, 50, 75, 100];
+    const volIdx = VOL_STOPS.reduce((best, v, i) => Math.abs(v - volume) < Math.abs(VOL_STOPS[best] - volume) ? i : best, 0);
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+          <Cover t={t} size={compact ? 56 : 68} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: compact ? 16 : 19, fontWeight: 600, color: 'var(--ink)' }}>{t.name}</div>
+            <div className="sub" style={{ marginTop: 3 }}>{t.desc}</div>
+          </div>
+          <Eq playing={playing} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 22, marginBottom: 16 }}>
+          <div className="iconbtn press" onClick={onPrev} style={{ color: 'var(--ink)' }}><Ic.IcPrev size={22} /></div>
+          <div className="iconbtn press primary lg" onClick={onPlay} style={{ color: '#1a1205' }}>
+            {playing ? <Ic.IcPause size={26} /> : <Ic.IcPlay size={26} />}
+          </div>
+          <div className="iconbtn press" onClick={onNext} style={{ color: 'var(--ink)' }}><Ic.IcNext size={22} /></div>
+        </div>
+        {onVolume && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: compact ? 0 : 16 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: 'var(--ink-3)', minWidth: 50 }}>VOLUME</span>
+            <div style={{ flex: 1 }}>
+              <StepSlider count={5} index={volIdx} color="var(--cyan)" onChange={(i) => onVolume(VOL_STOPS[i])} />
+            </div>
+            <span className="val" style={{ minWidth: 40, textAlign: 'right' }}>{volume}%</span>
+          </div>
+        )}
+        {!compact && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+            {TRACKS.map(tr => (
+              <div key={tr.id} onClick={() => onPick(tr.id)} className="press"
+                   style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: 8, borderRadius: 12,
+                            border: '1px solid ' + (tr.id === track ? 'var(--cyan)' : 'var(--line)'),
+                            background: tr.id === track ? 'var(--cyan-dim)' : 'transparent' }}>
+                <Cover t={tr} size={50} radius={11} />
+                <div style={{ fontSize: 11, fontWeight: 600, color: tr.id === track ? 'var(--cyan)' : 'var(--ink-2)', textAlign: 'center' }}>{tr.name}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  window.AeroMusic = { TRACKS, Cover, Eq, MusicPlayer };
+})();

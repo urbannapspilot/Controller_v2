@@ -1,0 +1,37 @@
+/* AeroPod — side-view recline seat (simplified).
+   Props: back (0..1 upright→flat), leg (0..1 down→flat), height.
+   Three cushioned segments hinge open; clean ease transition. */
+(function () {
+  function ReclineSeat({ back = 0, leg = 0, height = 230 }) {
+    const backRot = -(12 + back * 78);          // sit -12° → flat -90°
+    const legRot  = (1 - leg) * 48;             // down +48° → flat 0°
+    const tr = { transition: 'transform .55s ease' };
+    const cushion = { fill: 'rgba(235,192,122,0.12)', stroke: '#e9eef3', strokeWidth: 3.5, strokeLinejoin: 'round' };
+    const base    = { fill: 'rgba(255,255,255,0.05)', stroke: 'rgba(255,255,255,0.30)', strokeWidth: 3, strokeLinejoin: 'round' };
+
+    return (
+      <svg viewBox="0 0 340 230" width="100%" height={height} style={{ display: 'block', overflow: 'visible' }}>
+        {/* ground */}
+        <line x1="55" y1="206" x2="285" y2="206" stroke="rgba(255,255,255,0.12)" strokeWidth="2.5" strokeLinecap="round" />
+        <ellipse cx="170" cy="206" rx="105" ry="7" fill="rgba(0,0,0,0.4)" />
+
+        {/* pedestal */}
+        <path d="M128 150 L212 150 L218 186 Q218 190 214 190 L126 190 Q122 190 122 186 Z" {...base} />
+
+        {/* fixed seat pan */}
+        <rect x="118" y="130" width="98" height="20" rx="10" {...cushion} />
+
+        {/* backrest (pivots at back hinge 120,140) */}
+        <g style={{ ...tr, transform: `rotate(${backRot}deg)`, transformOrigin: '120px 140px' }}>
+          <rect x="106" y="60" width="20" height="82" rx="10" {...cushion} />
+        </g>
+
+        {/* legrest (pivots at front hinge 210,140) */}
+        <g style={{ ...tr, transform: `rotate(${legRot}deg)`, transformOrigin: '210px 140px' }}>
+          <rect x="206" y="130" width="84" height="20" rx="10" {...cushion} />
+        </g>
+      </svg>
+    );
+  }
+  window.ReclineSeat = ReclineSeat;
+})();
