@@ -187,6 +187,11 @@ class MainActivity : AppCompatActivity(), SerialInputOutputManager.Listener {
 
     private fun prepareWebView() {
         webView = findViewById(R.id.webView)
+        // Disable hardware acceleration to prevent UI rendering glitches ("pixels")
+        // on some kiosk hardware. Software rendering is often more stable for WebViews
+        // in these environments.
+        webView.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
