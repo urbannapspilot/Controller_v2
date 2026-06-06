@@ -39,6 +39,7 @@ android {
     }
 }
 
+// Single consolidated dependencies block (Bug #8: removed duplicate block).
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
@@ -46,13 +47,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.livedata.ktx)
     implementation(libs.androidx.activity.ktx)
+    implementation("androidx.webkit:webkit:1.9.0")
+    implementation("com.github.mik3y:usb-serial-for-android:3.7.3")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
-}
-
-dependencies {
-    // ... existing dependencies ...
-    implementation("androidx.webkit:webkit:1.9.0")
-    implementation("com.github.mik3y:usb-serial-for-android:3.7.3")
 }
