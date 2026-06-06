@@ -365,9 +365,8 @@ class MainActivity : AppCompatActivity() {
             if (ev.y <= zonePx) {
                 when {
                     ev.x <= zonePx              -> onSecretTap()
-                    // Bug #1 fixed: was (w/2)±(zonePx/2) — pointed to screen CENTRE.
-                    // Restored to top-RIGHT corner: ev.x >= w - zonePx.
-                    w > 0 && ev.x >= w - zonePx -> onExitSecretTap()
+                    // Exit gesture zone: top-CENTRE of the screen (intentional).
+                    w > 0 && ev.x >= (w / 2) - (zonePx / 2) && ev.x <= (w / 2) + (zonePx / 2) -> onExitSecretTap()
                 }
             }
         }
