@@ -34,6 +34,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // the serial-IO thread, so closePort() is dispatched to Dispatchers.Main
     // (not IO) to avoid the potential deadlock described in UsbSerialManager.
     private val usbSerialManager = UsbSerialManager(application).also { mgr ->
+        mgr.onDataReceived = { data ->
+            val message = String(data).trim().uppercase()
+            
+            when (message) {
+                "SLEEP" -> _usbEvent.postValue("force_sleep")
+                "WAKE" -> _wakeScreenEvent.postValue(Unit)
+                else -> {
+                    // Default behavior: any other data also wakes the screen
+                    _wakeScreenEvent.postValue(Unit)
+                }
+            }
+        }
         mgr.onRunError = { e ->
             logToJs("Serial run error: ${e.message}")
             // Dispatch to main so ioManager.stop() is NOT called from the
@@ -76,6 +88,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     private val _usbEvent = MutableLiveData<String>()
     val usbEvent: LiveData<String> = _usbEvent
+
+    private val _wakeScreenEvent = MutableLiveData<Unit>()
+    val wakeScreenEvent: LiveData<Unit> = _wakeScreenEvent
 
     enum class UiSource { NONE, BUNDLED, CACHE, NETWORK }
 

@@ -68,6 +68,17 @@ object KioskUtils {
     }
 
     fun exitKioskMode(activity: Activity): Boolean {
+        val dpm = activity.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val adminComponent = ComponentName(activity, KioskDeviceAdminReceiver::class.java)
+        
+        if (dpm.isDeviceOwnerApp(activity.packageName)) {
+            try {
+                dpm.setStatusBarDisabled(adminComponent, false)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to re-enable status bar: ${e.message}")
+            }
+        }
+
         return try {
             activity.stopLockTask()
             true

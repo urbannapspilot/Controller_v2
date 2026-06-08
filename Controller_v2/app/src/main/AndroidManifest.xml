@@ -22,7 +22,7 @@
         android:hardwareAccelerated="true"
         android:largeHeap="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="Urban Naps Controller"
+        android:label="Urban Naps Remote Control"
         android:theme="@style/Theme.AppCompat.NoActionBar">
 
         <activity

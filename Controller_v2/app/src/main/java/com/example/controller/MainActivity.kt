@@ -64,7 +64,7 @@ class MainActivity : AppCompatActivity() {
 
     // Inactivity screen-dim
     private val inactivityHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    private val dimRunnable = Runnable { setScreenBrightness(Config.BRIGHTNESS_DIM) }
+    private val dimRunnable = Runnable { setScreenBrightness(Config.BRIGHTNESS_OFF) }
 
     // ── USB broadcast receiver ───────────────────────────────────────────
 
@@ -252,6 +252,10 @@ class MainActivity : AppCompatActivity() {
     // ── LiveData observers ───────────────────────────────────────────────
 
     private fun setupObservers() {
+        viewModel.wakeScreenEvent.observe(this) {
+            resetInactivityTimer() // Restores brightness to 100%
+        }
+
         viewModel.uiHtml.observe(this) { html ->
             if (html != null) loadHtmlString(html) else loadBundledAsset()
         }
@@ -292,6 +296,10 @@ class MainActivity : AppCompatActivity() {
                 Config.EVENT_USB_PERMISSION_DENIED -> {
                     notifyWeb(event)
                     viewModel.usbEventConsumed()
+                }
+                "force_sleep" -> {
+                    viewModel.usbEventConsumed()
+                    setScreenBrightness(Config.BRIGHTNESS_OFF)
                 }
             }
         }
@@ -410,10 +418,6 @@ class MainActivity : AppCompatActivity() {
                         "To return to kiosk mode, simply relaunch the app or reboot."
             )
             .setPositiveButton("Exit Kiosk") { _, _ ->
-                // Re-enable status bar before exiting so the device is usable.
-                if (dpm.isDeviceOwnerApp(packageName)) {
-                    try { dpm.setStatusBarDisabled(adminComponent, false) } catch (_: Exception) {}
-                }
                 if (KioskUtils.exitKioskMode(this)) inLockTask = false
                 Toast.makeText(this, "Kiosk exited", Toast.LENGTH_SHORT).show()
                 moveTaskToBack(true)

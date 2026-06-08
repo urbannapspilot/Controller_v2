@@ -48,10 +48,13 @@ class UsbSerialManager(private val context: Context) : SerialInputOutputManager.
 
     /**
      * Called on the serial-IO thread when the port errors or disconnects.
-     * Keep this lightweight — heavy work (closing port, updating LiveData)
-     * should be dispatched to another thread by the implementor.
      */
     var onRunError: ((Exception) -> Unit)? = null
+
+    /**
+     * Called on the serial-IO thread whenever new data arrives.
+     */
+    var onDataReceived: ((ByteArray) -> Unit)? = null
 
     // ── Discovery ────────────────────────────────────────────────────────
 
@@ -145,6 +148,8 @@ class UsbSerialManager(private val context: Context) : SerialInputOutputManager.
         if (rxCount.incrementAndGet() > Config.RX_MAX_CHUNKS) {
             if (rxQueue.poll() != null) rxCount.decrementAndGet()
         }
+        // Notify any observers that new data has arrived
+        onDataReceived?.invoke(data)
     }
 
     override fun onRunError(e: Exception) {
